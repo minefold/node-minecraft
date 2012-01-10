@@ -1,0 +1,24 @@
+{
+  "name": "node-minecraft",
+  "version": "0.0.1",
+  "author": "Chris Lloyd <chris@minefold.com> (http://minefold.com)",
+  "description": "A node.js implementation of the Minecraft protocol",
+  "homepage": "https://github.com/minefold/node-minecraft",
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/minefold/node-minecraft.git"
+  },
+  "main": "./index",
+  "scripts": {
+    "test": "make test"
+  },
+  "dependencies": {
+    "iconv": "~1.1.3",
+    "node-int64": "~0.3.0"
+  },
+  "devDependencies": {
+  },
+  "engines": {
+    "node": "*"
+  }
+}
