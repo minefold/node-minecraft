@@ -134,9 +134,7 @@ class exports.Parser
     schema = Protocol.SCHEMAS[header]
 
     unless schema?
-      console.log header
-      console.log schema
-      console.log @buf
+      console.log 'unknown schema: ', header.toString('hex'), @buf
       process.exit(1)
 
     payload = for fieldType in schema

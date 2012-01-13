@@ -67,7 +67,7 @@ exports.LABELS =
 
 exports.SCHEMAS =
   0x00: ['Int']
-  0x01: ['Int', 'Str', 'Long', 'Int', 'Byte', 'Byte', 'Byte', 'Byte']
+  0x01: ['Int', 'Str', 'Long', 'Str', 'Int', 'Byte', 'Byte', 'Byte', 'Byte']
   0x02: ['Str']
   0x03: ['Str']
   0x04: ['Long']

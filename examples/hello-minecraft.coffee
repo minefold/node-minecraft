@@ -1,6 +1,7 @@
-# $ HOST=mars.minefold.com MC_USERNAME=whatupdave MC_PASSWORD=meow coffee examples/hello-minecraft.coffee
+# logs in, says hi, logs out
+# HOST=mars.minefold.com MC_USERNAME=whatupdave MC_PASSWORD=meow coffee examples/hello-minecraft.coffee
 
-Client = require('../src/client').Client
+Client = require('..').Client
 
 delay = (ms, func) -> setTimeout func, ms
 
