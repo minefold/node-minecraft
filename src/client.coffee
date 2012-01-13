@@ -6,17 +6,13 @@ Parser   = require('./parser').Parser
 Packet   = require('./packet').Packet
 Protocol = require('./protocol')
 
-class exports.Client extends events.EventEmitter
-
-  # TODO: Refactor!
-  constructor: (@port, @host, @username, @password) ->
-    @parser = new Parser()
-
+class WebAuthClient extends events.EventEmitter
+  getSessionId: (username, password, callback) ->
     loginPath = url.format
       pathname: '/'
       query:
-        user: @username
-        password: @password
+        user: username
+        password: password
         version: 12
 
     req = http.get {hostname: 'login.minecraft.net', path: loginPath}, (resp) =>
@@ -24,67 +20,104 @@ class exports.Client extends events.EventEmitter
         body = data.toString()
 
         if body is 'Bad login'
-          console.error(body)
-          process.exit(1)
+          @emit 'error', body
+        else
+          callback body.split(':', 4)[3]
+            
+  verifyServer: (username, sessionId, serverId, callback) ->
+    sessionPath = url.format
+      pathname: '/game/joinserver.jsp'
+      query:
+        user: username
+        sessionId: sessionId
+        serverId: serverId
 
-        sessionId = body.split(':', 4)[3]
+    vreq = http.get {hostname: 'session.minecraft.net', path: sessionPath}, (vresp) =>
 
-        # Connect to the server
-        @conn = net.createConnection(@port, @host)
-        @conn.on 'data', (data) => @addData(data)
+      vresp.on 'data', (data) =>
+        body = data.toString()
 
-        @conn.on 'end', => @emit 'end'
+        if body isnt 'OK'
+          @emit 'error', body
+        else
+          callback
+    
 
-        @conn.on 'connect', =>
-          # Send our username
-          @writePacket 0x02, @username
+class exports.Client extends events.EventEmitter
+  constructor: (@port, @host, @username, @password) ->
+    @parser = new Parser()
+    if @password
+      @connectOnlineMode()
+    else
+      @connectOfflineMode()
+      
+  connectOnlineMode: ->
+    webAuthClient = new WebAuthClient()
+    webAuthClient.on 'error', ->
+      console.error(body)
+      process.exit(1)
+      
+    webAuthClient.getSessionId @username, @password,  (sessionId) =>
+      # Connect to the server
+      @createConnection(@port, @host)
+        
+      @conn.on 'connect', =>
+        # Send our username
+        @writePacket 0x02, @username
 
-          # respond to keepalive packets
-          @on 'keepalive', (id) => @writePacket 0x00, id
+        # Get back the serverId
+        @once 'handshake', (serverId) =>
 
-          # Get back the serverId
-          @once 'handshake', (serverId) =>
+          webAuthClient.verifyServer @username, sessionId, serverId, ->
 
-            # Verify the serverId
-            sessionPath = url.format
-              pathname: '/game/joinserver.jsp'
-              query:
-                user: @username
-                sessionId: sessionId
-                serverId: serverId
+            @writePacket 0x01, 23, @username, 0, 0, 0, 0, 0, 0
+    
+  connectOfflineMode: ->
+    # Connect to the server
+    @createConnection(@port, @host)
+        
+    @conn.on 'connect', =>
+      # Send our username
+      @writePacket 0x02, @username
 
-            vreq = http.get {hostname: 'session.minecraft.net', path: sessionPath}, (vresp) =>
+      # Get back the serverId
+      @once 'handshake', (serverId) =>
+        console.log 'handshake'
+        @writePacket 0x01, 23, @username, 0, 0, 0, 0, 0, 0
+    
+  createConnection: ->
+    @conn = net.createConnection(@port, @host)    
+    @conn.on 'error', (error) => 
+      console.log "connection error: #{error}"
+      @emit 'error', error
+      
+    @conn.on 'data', (data) => @addData(data)
+    
+    # respond to keepalive packets
+    @on 'keepalive', (id) => @writePacket 0x00, id
+    
+    @once 'login', (@eId, _, seed, mode, dim, difficulty, height, maxPlayers) =>
+      console.log 'login'
+      @world =
+        seed: seed
+        mode: mode
+        dimension: dim
+        difficulty: difficulty
+        maxPlayers: maxPlayers
 
-              vresp.on 'data', (data) =>
-                body = data.toString()
+      @emit 'connect', @
 
-                if body isnt 'OK'
-                  console.error(body)
-                  process.exit(1)
+    # Echos the 0x0D packet (needs to happen otherwise server fucks out)
+    @once 'player position and look', (x, stance, y, z, yaw, pitch, grounded) =>
+      @writepacket 0x0D, arguments...
 
-                @writePacket 0x01, 22, @username, 0, 0, 0, 0, 0, 0
-
-                @once 'login', (@eId, _, seed, mode, dim, difficulty, height, maxPlayers) =>
-
-                  @world =
-                    seed: seed
-                    mode: mode
-                    dimension: dim
-                    difficulty: difficulty
-                    maxPlayers: maxPlayers
-
-                  @emit 'connect', @
-
-                # Echos the 0x0D packet (needs to happen otherwise server fucks out)
-                @once 'player position and look', (x, stance, y, z, yaw, pitch, grounded) =>
-                  @writepacket 0x0D, arguments...
+    @on 'end', => @emit 'end'
 
   writePacket: (header, payload...) ->
     if typeof(payload[payload.length - 1]) is 'function'
       callback = payload.pop()
 
     packet = new Packet(header)
-
     @conn.write packet.build(payload...), callback
 
   addData: (data) ->
@@ -102,6 +135,8 @@ class exports.Client extends events.EventEmitter
   parsePacket: ->
     try
       [bytesParsed, header, payload] = @parser.parse(@packet)
+
+      console.log header
 
       # Continue parsing left over data
       @packet = if bytesParsed < @packet.length
