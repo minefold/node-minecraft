@@ -6,20 +6,21 @@ Protocol = require('./protocol')
 
 
 class exports.Connection extends events.EventEmitter
-  constructor: (@conn) ->
+  constructor: (@socket) ->
     @parser = new Parser()
-    @conn.on 'connect', => @emit 'connect'
-    @conn.on 'data', (data) => @addData(data)
-    @conn.on 'error', (error) => 
-      console.log "connection error: #{error}"
-      @emit 'error', error
+    @socket.on 'connect', => @emit 'connect'
+    @socket.on 'end',     => @emit 'end'
+    @socket.on 'close',   (hadError) => @emit 'close', hadError
+    @socket.on 'error',   (error) => @emit 'error', error
+
+    @socket.on 'data',    (data) => @addData(data)
     
   writePacket: (header, payload...) ->
     if typeof(payload[payload.length - 1]) is 'function'
       callback = payload.pop()
 
     packet = new Packet(header)
-    @conn.write packet.build(payload...), callback
+    @socket.write packet.build(payload...), callback
 
   addData: (data) ->
     # If data already exists, add this new stuff

@@ -86,9 +86,12 @@ class exports.Client extends events.EventEmitter
   createConnection: ->
     @conn = new Connection net.createConnection(@port, @host)    
     
+    @conn.on 'end',     => @emit 'end'
+    @conn.on 'close',   (hadError) => @emit 'close', hadError
+    @conn.on 'error',   (error) => @emit 'error', error
+    
     # respond to keepalive packets
     @conn.on 'keepalive', (id) => @conn.writePacket 0x00, id
-    
     @conn.once 'login', (@eId, _, seed, levelType, mode, dim, difficulty, height, maxPlayers) =>
       @world =
         seed: seed
@@ -103,9 +106,6 @@ class exports.Client extends events.EventEmitter
     # Echos the 0x0D packet (needs to happen otherwise server fucks out)
     @conn.once 'player position and look', (x, stance, y, z, yaw, pitch, grounded) =>
       @conn.writePacket 0x0D, arguments...
-
-    @conn.on 'end', => @emit 'end'
-
 
   # Convenience functions
   say: (msg) ->
