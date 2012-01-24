@@ -22,5 +22,9 @@ socket.on 'connect', ->
 
   # Stop the timer when we get a response
   c.once 'data', (header, payload) ->
-    console.log payload[0]
+    [msg, players, max] = payload[0].split('§', 3)
+    console.log "msg:", msg
+    console.log "players:", players
+    console.log "max:", max
+
     console.timeEnd('ping')
