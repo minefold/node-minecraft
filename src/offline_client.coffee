@@ -1,9 +1,9 @@
 Client = require('./client').Client
 
-class exports.OnlineClient extends Client
+class exports.OfflineClient extends Client
 
   @createConnection: ->
-    client = super()
+    client = super(arguments...)
 
     # Start things off by initializing the handshake
     client.write 'handshake', client.username
