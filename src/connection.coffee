@@ -4,26 +4,27 @@ Parser   = require('./parser').Parser
 Packet   = require('./packet').Packet
 Protocol = require('./protocol')
 
-
 class exports.Connection extends events.EventEmitter
   constructor: (@socket) ->
     @parser = new Parser()
     @socket.on 'connect', => @emit 'connect'
-    @socket.on 'end',     => @emit 'end'
-    @socket.on 'close',   (hadError) => @emit 'close', hadError
-    @socket.on 'error',   (error) => @emit 'error', error
+    @socket.on 'end', => @emit 'end'
+    @socket.on 'close', (hadError) => @emit 'close', hadError
+    @socket.on 'error', (error) => @emit 'error', error
+    @socket.on 'data', (data) => @addData(data)
 
-    @socket.on 'data',    (data) => @addData(data)
-    
+  end: (msg) ->
+    @socket.end()
+
   writePacket: (header, payload...) ->
-    if typeof(payload[payload.length - 1]) is 'function'
+    if payload? and typeof(payload[payload.length - 1]) is 'function'
       callback = payload.pop()
 
     packet = new Packet(header)
     @socket.write packet.build(payload...), callback
 
   addData: (data) ->
-    # If data already exists, add this new stuff
+    # If leftover data already exists, concatenate.
     @packet = if @packet?
       p = new Buffer(@packet.length + data.length)
       @packet.copy(p, 0, 0)
@@ -38,18 +39,15 @@ class exports.Connection extends events.EventEmitter
     try
       [bytesParsed, header, payload] = @parser.parse(@packet)
 
-      # Continue parsing left over data
+      # Cut out the packet we parsed
       @packet = if bytesParsed < @packet.length
         @packet.slice(bytesParsed)
       else
         null
 
-      # Human readable event with the payload as args
-      event = Protocol.LABELS[header] || 'unhandled'
-      
-      @emit event, payload...
-      @emit 'packet', event, header, payload...
+      @emit 'data', header, payload
 
+      # Parse the reset of the data if any is remaining.
       @parsePacket() if @packet?
 
     # An error parsing means the data crosses over two packets and we need to try again when another packet comes in.

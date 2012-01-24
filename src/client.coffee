@@ -1,98 +1,40 @@
 events = require 'events'
-http  = require 'http'
-url   = require 'url'
-net   = require 'net'
+net = require 'net'
 Connection = require('./connection').Connection
-
-delay = (ms, func) -> setTimeout func, ms
-
-class WebAuthClient extends events.EventEmitter
-  getSessionId: (username, password, callback) ->
-    loginPath = url.format
-      pathname: '/'
-      query:
-        user: username
-        password: password
-        version: 12
-
-    req = http.get {hostname: 'login.minecraft.net', path: loginPath}, (resp) =>
-      resp.on 'data', (data) =>
-        body = data.toString()
-
-        if body is 'Bad login'
-          @emit 'error', body
-        else
-          callback body.split(':', 4)[3]
-            
-  verifyServer: (username, sessionId, serverId, callback) ->
-    sessionPath = url.format
-      pathname: '/game/joinserver.jsp'
-      query:
-        user: username
-        sessionId: sessionId
-        serverId: serverId
-
-    vreq = http.get {hostname: 'session.minecraft.net', path: sessionPath}, (vresp) =>
-
-      vresp.on 'data', (data) =>
-        body = data.toString()
-
-        if body isnt 'OK'
-          @emit 'error', body
-        else
-          callback
-    
+Protocol = require('./protocol')
 
 class exports.Client extends events.EventEmitter
-  constructor: (@port, @host, @username, @password) ->
-    if @password
-      @connectOnlineMode()
-    else
-      @connectOfflineMode()
-      
-  connectOnlineMode: ->
-    webAuthClient = new WebAuthClient()
-    webAuthClient.on 'error', ->
-      console.error(body)
-      process.exit(1)
-      
-    webAuthClient.getSessionId @username, @password,  (sessionId) =>
-      # Connect to the server
-      @createConnection(@port, @host)
-        
-      @conn.on 'connect', =>
-        # Send our username
-        @conn.writePacket 0x02, @username
+  @PORT = 25565
+  @PROTOCOL_VERSION = 23
 
-        # Get back the serverId
-        @conn.once 'handshake', (serverId) =>
+  @createConnection: (host, port, username, password, callback) ->
+    new @(host, port, username, password, callback)
 
-          webAuthClient.verifyServer @username, sessionId, serverId, ->
+  constructor: (@host, @port, @username, @password, callback) ->
+    if callback? and typeof(callback) is 'function'
+      @on 'connect', callback
 
-            @conn.writePacket 0x01, 23, @username, 0, '', 0, 0, 0, 0, 0
-    
-  connectOfflineMode: ->
-    # Connect to the server
-    @createConnection(@port, @host)
-        
-    @conn.on 'connect', =>
-      # Send our username
-      @conn.writePacket 0x02, @username
+    @conn = new Connection(net.createConnection(@port, @host))
 
-      # Get back the serverId
-      @conn.once 'handshake', (serverId) =>
-        @conn.writePacket 0x01, 23, @username, 0, '', 0, 0, 0, 0, 0
-    
-  createConnection: ->
-    @conn = new Connection net.createConnection(@port, @host)    
-    
-    @conn.on 'end',     => @emit 'end'
-    @conn.on 'close',   (hadError) => @emit 'close', hadError
-    @conn.on 'error',   (error) => @emit 'error', error
-    
-    # respond to keepalive packets
-    @conn.on 'keepalive', (id) => @conn.writePacket 0x00, id
-    @conn.once 'login', (@eId, _, seed, levelType, mode, dim, difficulty, height, maxPlayers) =>
+    @conn.on 'end', => @emit 'end'
+    @conn.on 'close', (hadError) => @emit 'close', hadError
+    @conn.on 'error', (error) => @emit 'error', error
+
+    # Emits a human readable event with the payload as args
+    @conn.on 'data', (header, payload) =>
+      eventName = Protocol.LABELS[header] || 'unhandled'
+      @emit eventName, payload...
+
+    # Echo keepalives to keep the socket open
+    @on 'keepalive', =>
+      @write 'keepalive', arguments...
+
+    # Echos the 0x0D packet (needs to happen otherwise server fucks out)
+    @once 'player position and look', =>
+      @write 'player position and look', arguments...
+
+    # Kick things off once when we get the login
+    @once 'login', (@eId, _, seed, levelType, mode, dim, difficulty, height, maxPlayers) ->
       @world =
         seed: seed
         levelType: levelType
@@ -103,17 +45,16 @@ class exports.Client extends events.EventEmitter
 
       @emit 'connect', @
 
-    # Echos the 0x0D packet (needs to happen otherwise server fucks out)
-    @conn.once 'player position and look', (x, stance, y, z, yaw, pitch, grounded) =>
-      @conn.writePacket 0x0D, arguments...
 
-  # Convenience functions
-  say: (msg) ->
-    msg.split("\n").forEach (line) =>
-      if line.length > 100
-        line = line.substring(0, 100)
+  write: (packetName, payload...) ->
+    packet = Protocol.HEADERS[packetName]
+    @conn.writePacket packet, payload...
 
-      @conn.writePacket 0x03, line
-      
-  disconnect: ->
-    @conn.writePacket 0xFF, 'Bye!'
+  end: (msg) ->
+    @write 'kick', msg || 'Bye!', =>
+      @conn.end()
+
+  say: (msg, callback) ->
+    console.assert 0 < msg.length <= 100
+    @write 'chat', msg, callback
+

@@ -65,6 +65,12 @@ exports.LABELS =
   0xFE: 'ping'
   0xFF: 'kick'
 
+h = {}
+for header, label of exports.LABELS
+  h[label] = parseInt(header, 10)
+
+exports.HEADERS = h
+
 exports.SCHEMAS =
   0x00: ['Int']
   0x01: ['Int', 'Str', 'Long', 'Str', 'Int', 'Byte', 'Byte', 'Byte', 'Byte']
