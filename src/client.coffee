@@ -5,7 +5,7 @@ Protocol = require('./protocol')
 
 class exports.Client extends events.EventEmitter
   @PORT = 25565
-  @PROTOCOL_VERSION = 23
+  @PROTOCOL_VERSION = 28
 
   @createConnection: (host, port, username, password, callback) ->
     new @(host, port, username, password, callback)
