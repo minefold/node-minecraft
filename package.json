@@ -1,6 +1,6 @@
 {
   "name": "node-minecraft",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "A node.js implementation of the Minecraft protocol",
   "homepage": "https://github.com/minefold/node-minecraft",
   "repository": {
